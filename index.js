@@ -3,17 +3,23 @@
 
 const express = require("express");
 
-const Users = require("./data/db");
+const db = require("./data/db");
 
 const port = 5000;
 
 const server = express();
 
 server.use(express.json());
+server.use(cors());
+
+//GET
+server.get("/", (req, res) => {
+  res.json({ message: "Server running on port", port });
+});
 
 //GET ALL USERS -- find()
 server.get("/api/users", (req, res) => {
-  Users.find()
+  db.find()
     .then(users => {
       res.status(200).json(users);
     })
@@ -27,15 +33,15 @@ server.get("/api/users", (req, res) => {
 
 //POST USER -- insert()
 server.post("/api/users", (req, res) => {
-  if (!req.body.name || !req.body.bio) {
+  const newUser = req.body;
+  if (!newUser.name || !newUser.bio) {
     res
       .status(400)
       .json({ errorMessage: "Please provide name and bio for the user." });
   } else {
-    const newUser = req.body;
-    Users.insert(newUser)
+    db.insert(newUser)
       .then(user => {
-        res.status(201).json(req.body); //not the whole user document - missing id / created at / updated at
+        res.status(201).json(newUser); //not the whole user document - missing id / created at / updated at
       })
       .catch(err => {
         console.log(err);
@@ -49,7 +55,7 @@ server.post("/api/users", (req, res) => {
 
 //GET USER BY ID -- findByID()
 server.get("/api/users/:id", (req, res) => {
-  Users.findById(req.params.id)
+  db.findById(req.params.id)
     .then(user => {
       if (!user) {
         res
@@ -73,42 +79,64 @@ server.put("/api/users/:id", (req, res) => {
     res
       .status(400)
       .json({ errorMessage: "Please provide name and bio for the user." });
-  } else if (!req.params.id) {
-    // not working, wrong if statement? (needsFindByID?)
-    res
-      .status(404)
-      .json({ message: "The user with the specified ID does not exist" });
   } else {
-    const changes = req.body;
-    Users.update(req.params.id, changes)
-      .then(change => {
-        res.status(200).json(changes); //missing created at / updated at
+    const { id } = req.params;
+    db.findById(id)
+      .then(user => {
+        if (!user) {
+          res
+            .status(404)
+            .json({ message: "The user with the specified ID does not exist" });
+        } else {
+          db.update(id, req.body)
+            .then(change => {
+              res.status(200).json(user); //returns whole user info because of findById
+            })
+            .catch(err => {
+              res.status(500).json({
+                message: "The user information could not be modified."
+              });
+            });
+        }
       })
       .catch(err => {
-        console.log(err);
-        res.status(500).json({
-          errorMessage: "The user information could not be modified."
-        });
+        res
+          .status(500)
+          .json({ message: "The user information could not be retrieved" });
       });
   }
 });
 
 //DELETE USER -- delete()
 server.delete("/api/users/:id", (req, res) => {
-  if (!req.params.id) {
-    res
-      .status(404)
-      .json({ message: "The user with the specified ID does not exist" });
-  } else {
-    Users.remove(req.params.id)
-      .then(removed => {
-        res.status(200).json(removed); // incorrect id of who was removed (needs findById)
-      })
-      .catch(err => {
-        console.log(err);
-        res.status(500).json({ errorMessage: "Error" });
-      });
-  }
+  const { id } = req.params;
+
+  //check to see if user exists
+  db.findById(id)
+    .then(user => {
+      if (!user) {
+        res
+          .status(404)
+          .json({ message: "The user with the specified ID does not exist" });
+
+        //user exists -- delete
+      } else {
+        db.remove(id)
+          .then(data => {
+            res.status(200).json(user); //info of deleted user
+          })
+          .catch(err => {
+            res
+              .status(500)
+              .json({ errorMessage: "The information could not be retrieved" });
+          });
+      }
+    })
+    .catch(err => {
+      res
+        .status(500)
+        .json({ errorMessage: "The information could not be retrieved" });
+    });
 });
 
 server.listen(port, () => {
